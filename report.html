@@ -1,0 +1,2447 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clef moderation report</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f5f6f8; --panel: #ffffff; --text: #1c2129; --muted: #5b6573; --line: #dfe3e8;
+    --hover: #eef1f4; --accent: #2357c6; --warn: #9a5b00;
+    --acceptable: #22764a; --acceptable-soft: #e2f2e9;
+    --toxic: #bb2d22; --toxic-soft: #fbe6e4;
+    --spam: #9a5b00; --spam-soft: #fcefd9;
+    --unclassified: #6b7280; --unclassified-soft: #eceef1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121418; --panel: #1b1e24; --text: #e5e8ec; --muted: #9ba4af; --line: #2d323a;
+      --hover: #252930; --accent: #85a9ff; --warn: #f2b45f;
+      --acceptable: #6cc995; --acceptable-soft: #1a3325;
+      --toxic: #ff8f85; --toxic-soft: #3c1f1c;
+      --spam: #f2b45f; --spam-soft: #3a2b14;
+      --unclassified: #9ca3af; --unclassified-soft: #2a2e35;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+  }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  header { background: var(--panel); border-bottom: 1px solid var(--line); padding: 14px 20px 10px; }
+  @media (min-width: 760px) { header { position: sticky; top: 0; z-index: 1; } }
+  h1 { margin: 0; font-size: 1.25rem; }
+  .sub { margin: 2px 0 0; color: var(--muted); font-size: .875rem; }
+  code { font: .85em ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--hover);
+         padding: 1px 5px; border-radius: 4px; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  .chip, .button {
+    border: 1px solid var(--line); background: var(--panel); border-radius: 999px;
+    padding: 3px 12px; font-size: .875rem; cursor: pointer;
+    display: inline-flex; gap: 6px; align-items: center;
+  }
+  .button { border-radius: 6px; }
+  .button.primary { background: var(--accent); border-color: var(--accent); color: var(--panel); font-weight: 600; }
+  .chip:hover, .button:hover { background: var(--hover); }
+  .button.primary:hover { background: var(--accent); filter: brightness(1.1); }
+  .chip[aria-pressed="true"] { border-color: var(--text); background: var(--hover); font-weight: 600; }
+  .chip b { font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .chip i { width: 9px; height: 9px; border-radius: 50%; background: var(--c); }
+  .chip.low { color: var(--warn); }
+  input[type="search"], select, textarea {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px;
+  }
+  input[type="search"] { flex: 1 1 220px; max-width: 380px; }
+  .toolbar label { font-size: .875rem; color: var(--muted); }
+  #progress { font-size: .875rem; font-weight: 600; font-variant-numeric: tabular-nums; margin-right: auto; }
+  main { max-width: 1240px; margin: 0 auto; padding: 12px 20px 48px; }
+  .help { color: var(--muted); font-size: .85rem; margin: 4px 0 12px; max-width: 70rem; }
+
+  .acceptable { --c: var(--acceptable); --soft: var(--acceptable-soft); }
+  .toxic { --c: var(--toxic); --soft: var(--toxic-soft); }
+  .spam { --c: var(--spam); --soft: var(--spam-soft); }
+  .unclassified { --c: var(--unclassified); --soft: var(--unclassified-soft); }
+  .row {
+    display: grid; grid-template-columns: 2.8rem 10rem minmax(0, 1fr) 14.5rem; gap: 6px 16px;
+    align-items: start; background: var(--panel); border: 1px solid var(--line);
+    border-left: 5px solid var(--c, var(--line)); border-radius: 8px; padding: 10px 14px; margin-bottom: 6px;
+  }
+  .row[hidden] { display: none; }
+  .row[data-review="right"] { opacity: .6; }
+  .row[data-review="right"]:hover, .row[data-review="right"]:focus-within { opacity: 1; }
+  .row[data-review="wrong"] { outline: 2px solid var(--toxic); outline-offset: -1px; }
+  .id { color: var(--muted); font-size: .875rem; font-variant-numeric: tabular-nums; padding-top: 2px; }
+  .verdict { display: flex; flex-direction: column; gap: 4px; font-size: .8rem; }
+  .badge {
+    align-self: flex-start; font-size: .75rem; font-weight: 700; letter-spacing: .05em;
+    text-transform: uppercase; color: var(--c); background: var(--soft); border-radius: 4px; padding: 1px 8px;
+  }
+  .conf, .alt { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .conf.low { color: var(--warn); font-weight: 700; }
+  .bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--line); }
+  .seg { background: var(--c); }
+  .text { margin: 0; overflow-wrap: anywhere; }
+  .meta { margin: 3px 0 0; color: var(--muted); font-size: .8rem; }
+  .review { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: .8rem; }
+  .verdicts { display: inline-flex; }
+  .verdicts button {
+    border: 1px solid var(--line); background: var(--panel); padding: 3px 10px; cursor: pointer;
+  }
+  .verdicts button:first-child { border-radius: 6px 0 0 6px; }
+  .verdicts button:last-child { border-radius: 0 6px 6px 0; border-left: 0; }
+  .verdicts button:hover { background: var(--hover); }
+  [data-verdict="right"][aria-pressed="true"] {
+    background: var(--acceptable-soft); color: var(--acceptable); font-weight: 700;
+  }
+  [data-verdict="wrong"][aria-pressed="true"] { background: var(--toxic-soft); color: var(--toxic); font-weight: 700; }
+  .check { display: inline-flex; gap: 4px; align-items: center; cursor: pointer; }
+  .fix, .note { display: none; }
+  .row[data-review="wrong"] .fix { display: inline-flex; gap: 6px; align-items: center; }
+  .row[data-review="wrong"] .note, .row.is-borderline .note { display: block; width: 100%; resize: vertical; }
+  #empty { color: var(--muted); text-align: center; padding: 32px; }
+
+  dialog {
+    width: min(780px, calc(100vw - 32px)); border: 1px solid var(--line); border-radius: 10px;
+    background: var(--panel); color: var(--text); padding: 18px 20px;
+  }
+  dialog::backdrop { background: rgb(0 0 0 / .45); }
+  dialog h2 { margin: 0 0 4px; font-size: 1.1rem; }
+  #markdown { width: 100%; height: 55vh; font: .8rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .dialog-buttons { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
+
+  @media (max-width: 760px) {
+    header, main { padding-left: 16px; padding-right: 16px; }
+    .row { grid-template-columns: 2.4rem minmax(0, 1fr); padding: 10px 12px; }
+    .verdict { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+    .bar { width: 5rem; }
+    .body, .review { grid-column: 2; }
+  }
+</style>
+</head>
+<body data-model="clef" data-labels="acceptable toxic spam">
+<header>
+  <h1>Clef moderation report</h1>
+  <p class="sub">CS307 Applied AI Lab (B.Tech CSE, 3rd year) · forum: Assignment 3: Build an AI artifact with Claude / Codex</p>
+  <p class="sub">Model <code>clef</code> on Cloudflare Workers AI · 100 comments · answers from 26 Oct 2026, 19:04 UTC</p>
+  <nav class="toolbar" aria-label="Show comments by Clef's label">
+    <button type="button" class="chip all" data-filter="all" aria-pressed="true">all <b>100</b></button>
+    <button type="button" class="chip acceptable" data-filter="acceptable" aria-pressed="false"><i></i>acceptable <b>72</b></button>
+    <button type="button" class="chip toxic" data-filter="toxic" aria-pressed="false"><i></i>toxic <b>14</b></button>
+    <button type="button" class="chip spam" data-filter="spam" aria-pressed="false"><i></i>spam <b>14</b></button>
+    <button type="button" class="chip low" data-filter="low" aria-pressed="false">⚠ confidence below 0.50 <b>4</b></button>
+  </nav>
+  <div class="toolbar">
+    <input type="search" id="search" placeholder="Search text, author, or #id" aria-label="Search comments">
+    <label>Sort
+      <select id="sort">
+        <option value="id">by comment id</option>
+        <option value="confidence">least confident first</option>
+        <option value="label">by label, least confident first</option>
+      </select>
+    </label>
+  </div>
+  <div class="toolbar">
+    <span id="progress" aria-live="polite"></span>
+    <label class="check"><input type="checkbox" id="unchecked"> Only unchecked</label>
+    <button type="button" class="button primary" id="export">Export MISTAKES.md</button>
+    <button type="button" class="button" id="reset">Reset marks</button>
+  </div>
+</header>
+<main>
+  <p class="help">
+    The coloured bar shows Clef's probability for each label; hover it for the numbers.
+    <b>Confidence</b> is Clef's own certainty from 0 to 1, and ⚠ marks answers below 0.50,
+    the ones most worth a careful look. To check Clef's work, read each comment and mark it
+    <b>✓ Right</b> or <b>✗ Wrong</b> (then pick the right label and say why); tick <b>Borderline</b>
+    for close calls. Your marks are saved in this browser only. <b>Export</b> turns them into MISTAKES.md.
+  </p>
+  <div id="rows">
+<article class="row acceptable" data-id="1" data-label="acceptable" data-confidence="0.9088" data-low="0" data-search="#1 ma&#x27;am, is it okay if we use claude for the frontend and codex for the backend logic, or should the whole artifact be built with one tool? aditya kulkarni doubts">
+  <div class="id">#1</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.91</span>
+    <span class="bar" role="img" title="acceptable 0.97, toxic 0.02, spam 0.01" aria-label="acceptable 0.97, toxic 0.02, spam 0.01"><span class="seg acceptable" style="width:96.9%"></span><span class="seg toxic" style="width:1.7%"></span><span class="seg spam" style="width:1.5%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Ma&#x27;am, is it okay if we use Claude for the frontend and Codex for the backend logic, or should the whole artifact be built with one tool?</p>
+    <p class="meta">Aditya Kulkarni · Doubts · 2026-10-12 09:14</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 1?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 1" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="2" data-label="acceptable" data-confidence="0.8934" data-low="0" data-search="#2 submitted my artifact: a timetable clash checker for our dept. claude made the ui in like 10 mins but i spent 2 hours fixing the csv parsing. link is in my submission. sneha iyer share your artifacts">
+  <div class="id">#2</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.89</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.4%"></span><span class="seg toxic" style="width:2.0%"></span><span class="seg spam" style="width:1.7%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Submitted my artifact: a timetable clash checker for our dept. Claude made the UI in like 10 mins but I spent 2 hours fixing the CSV parsing. Link is in my submission.</p>
+    <p class="meta">Sneha Iyer · Share your artifacts · 2026-10-12 10:02</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 2?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 2" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row spam" data-id="3" data-label="spam" data-confidence="0.9505" data-low="0" data-search="#3 🔥🔥 get your assignments done by experts 🔥🔥 claude/codex/ml projects, plagiarism free, 100% marks guaranteed. whatsapp +91 90000 12345. special discount for cs307 students!! assignmentguru_99 general">
+  <div class="id">#3</div>
+  <div class="verdict">
+    <span class="badge">spam</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.95</span>
+    <span class="bar" role="img" title="acceptable 0.01, toxic 0.01, spam 0.98" aria-label="acceptable 0.01, toxic 0.01, spam 0.98"><span class="seg acceptable" style="width:0.9%"></span><span class="seg toxic" style="width:0.8%"></span><span class="seg spam" style="width:98.3%"></span></span>
+    <span class="alt">next: acceptable 0.01</span>
+  </div>
+  <div class="body">
+    <p class="text">🔥🔥 GET YOUR ASSIGNMENTS DONE BY EXPERTS 🔥🔥 Claude/Codex/ML projects, plagiarism free, 100% marks guaranteed. WhatsApp +91 90000 12345. Special discount for CS307 students!!</p>
+    <p class="meta">AssignmentGuru_99 · General · 2026-10-12 10:40</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 3?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="acceptable">acceptable</option><option value="toxic">toxic</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 3" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="4" data-label="acceptable" data-confidence="0.8974" data-low="0" data-search="#4 does the reflection doc need to include the prompts we used? mine is around 40 prompts, that seems like too much to paste. pooja nair doubts">
+  <div class="id">#4</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.90</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.5%"></span><span class="seg toxic" style="width:1.8%"></span><span class="seg spam" style="width:1.7%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Does the reflection doc need to include the prompts we used? Mine is around 40 prompts, that seems like too much to paste.</p>
+    <p class="meta">Pooja Nair · Doubts · 2026-10-12 11:25</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 4?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 4" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="5" data-label="acceptable" data-confidence="0.9271" data-low="0" data-search="#5 @rohit your expense splitter is really clean. one suggestion: there&#x27;s a rounding error when splitting ₹100 three ways, it shows 33.33 x 3 = 99.99. harsh agarwal share your artifacts">
+  <div class="id">#5</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.93</span>
+    <span class="bar" role="img" title="acceptable 0.98, toxic 0.01, spam 0.01" aria-label="acceptable 0.98, toxic 0.01, spam 0.01"><span class="seg acceptable" style="width:97.5%"></span><span class="seg toxic" style="width:1.3%"></span><span class="seg spam" style="width:1.2%"></span></span>
+    <span class="alt">next: toxic 0.01</span>
+  </div>
+  <div class="body">
+    <p class="text">@Rohit your expense splitter is really clean. One suggestion: there&#x27;s a rounding error when splitting ₹100 three ways, it shows 33.33 x 3 = 99.99.</p>
+    <p class="meta">Harsh Agarwal · Share your artifacts · 2026-10-12 12:10</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 5?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 5" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row toxic" data-id="6" data-label="toxic" data-confidence="0.7164" data-low="0" data-search="#6 rohit&#x27;s project is copy-paste from github, everyone knows. shameless guy, and sir still gives him marks. pathetic. vikram singh share your artifacts">
+  <div class="id">#6</div>
+  <div class="verdict">
+    <span class="badge">toxic</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.72</span>
+    <span class="bar" role="img" title="acceptable 0.09, toxic 0.90, spam 0.01" aria-label="acceptable 0.09, toxic 0.90, spam 0.01"><span class="seg acceptable" style="width:9.3%"></span><span class="seg toxic" style="width:89.6%"></span><span class="seg spam" style="width:1.1%"></span></span>
+    <span class="alt">next: acceptable 0.09</span>
+  </div>
+  <div class="body">
+    <p class="text">Rohit&#x27;s project is copy-paste from GitHub, everyone knows. Shameless guy, and sir still gives him marks. Pathetic.</p>
+    <p class="meta">Vikram Singh · Share your artifacts · 2026-10-12 12:31</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 6?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="acceptable">acceptable</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 6" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="7" data-label="acceptable" data-confidence="0.8712" data-low="0" data-search="#7 bhai kisi ko codex ka access mila? my college email isn&#x27;t working for the student plan. mohd. faizan doubts">
+  <div class="id">#7</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.87</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:95.6%"></span><span class="seg toxic" style="width:2.2%"></span><span class="seg spam" style="width:2.2%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Bhai kisi ko Codex ka access mila? My college email isn&#x27;t working for the student plan.</p>
+    <p class="meta">Mohd. Faizan · Doubts · 2026-10-12 13:05</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 7?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 7" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="8" data-label="acceptable" data-confidence="0.9131" data-low="0" data-search="#8 ma&#x27;am, is a deadline extension possible? our hostel wifi was down from thursday night till saturday, the warden can confirm. shreya patil submission &amp; grading">
+  <div class="id">#8</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.91</span>
+    <span class="bar" role="img" title="acceptable 0.97, toxic 0.02, spam 0.01" aria-label="acceptable 0.97, toxic 0.02, spam 0.01"><span class="seg acceptable" style="width:97.0%"></span><span class="seg toxic" style="width:1.6%"></span><span class="seg spam" style="width:1.4%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Ma&#x27;am, is a deadline extension possible? Our hostel wifi was down from Thursday night till Saturday, the warden can confirm.</p>
+    <p class="meta">Shreya Patil · Submission &amp; grading · 2026-10-12 14:47</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 8?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 8" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="9" data-label="acceptable" data-confidence="0.8919" data-low="0" data-search="#9 i found that claude kept adding features i didn&#x27;t ask for. telling it &quot;do only x, nothing else&quot; at the start helped a lot. vivek menon doubts">
+  <div class="id">#9</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.89</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.3%"></span><span class="seg toxic" style="width:1.9%"></span><span class="seg spam" style="width:1.8%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">I found that Claude kept adding features I didn&#x27;t ask for. Telling it &quot;do only X, nothing else&quot; at the start helped a lot.</p>
+    <p class="meta">Vivek Menon · Doubts · 2026-10-12 15:20</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 9?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 9" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row spam" data-id="10" data-label="spam" data-confidence="0.9177" data-low="0" data-search="#10 join our telegram group for free claude pro &amp; chatgpt plus accounts 🤑 only ₹199 lifetime. t.me/aitoolsdeal_india (limited slots) free ai deals general">
+  <div class="id">#10</div>
+  <div class="verdict">
+    <span class="badge">spam</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.92</span>
+    <span class="bar" role="img" title="acceptable 0.02, toxic 0.01, spam 0.97" aria-label="acceptable 0.02, toxic 0.01, spam 0.97"><span class="seg acceptable" style="width:1.6%"></span><span class="seg toxic" style="width:1.2%"></span><span class="seg spam" style="width:97.2%"></span></span>
+    <span class="alt">next: acceptable 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Join our Telegram group for FREE Claude Pro &amp; ChatGPT Plus accounts 🤑 only ₹199 lifetime. t.me/aitoolsdeal_india (limited slots)</p>
+    <p class="meta">Free AI Deals · General · 2026-10-12 16:02</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 10?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="acceptable">acceptable</option><option value="toxic">toxic</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 10" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="11" data-label="acceptable" data-confidence="0.8764" data-low="0" data-search="#11 can we deploy on vercel or does it have to run locally? mine needs an api key and i don&#x27;t want to expose it publicly. karthik reddy doubts">
+  <div class="id">#11</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.88</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:95.7%"></span><span class="seg toxic" style="width:2.2%"></span><span class="seg spam" style="width:2.0%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Can we deploy on Vercel or does it have to run locally? Mine needs an API key and I don&#x27;t want to expose it publicly.</p>
+    <p class="meta">Karthik Reddy · Doubts · 2026-10-12 17:33</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 11?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 11" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="12" data-label="acceptable" data-confidence="0.8745" data-low="0" data-search="#12 good point sneha made in the lab: if the artifact stores data in localstorage, mention it in the reflection, since the data stays only in your browser. ananya joshi doubts">
+  <div class="id">#12</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.87</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:95.7%"></span><span class="seg toxic" style="width:2.2%"></span><span class="seg spam" style="width:2.1%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Good point Sneha made in the lab: if the artifact stores data in localStorage, mention it in the reflection, since the data stays only in your browser.</p>
+    <p class="meta">Ananya Joshi · Doubts · 2026-10-12 18:15</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 12?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 12" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row toxic" data-id="13" data-label="toxic" data-confidence="0.8970" data-low="0" data-search="#13 seriously who asks these dumb questions? read the assignment pdf before posting, idiots. wasting everyone&#x27;s time. saurabh yadav doubts">
+  <div class="id">#13</div>
+  <div class="verdict">
+    <span class="badge">toxic</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.90</span>
+    <span class="bar" role="img" title="acceptable 0.03, toxic 0.96, spam 0.01" aria-label="acceptable 0.03, toxic 0.96, spam 0.01"><span class="seg acceptable" style="width:2.5%"></span><span class="seg toxic" style="width:96.5%"></span><span class="seg spam" style="width:1.0%"></span></span>
+    <span class="alt">next: acceptable 0.03</span>
+  </div>
+  <div class="body">
+    <p class="text">Seriously who asks these dumb questions? Read the assignment PDF before posting, idiots. Wasting everyone&#x27;s time.</p>
+    <p class="meta">Saurabh Yadav · Doubts · 2026-10-12 19:02</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 13?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="acceptable">acceptable</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 13" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="14" data-label="acceptable" data-confidence="0.9250" data-low="0" data-search="#14 honestly i think this assignment is too easy for 15 marks, the ai does 80% of the work. grading should focus more on the reflection part. nikhil bansal submission &amp; grading">
+  <div class="id">#14</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.93</span>
+    <span class="bar" role="img" title="acceptable 0.97, toxic 0.01, spam 0.01" aria-label="acceptable 0.97, toxic 0.01, spam 0.01"><span class="seg acceptable" style="width:97.5%"></span><span class="seg toxic" style="width:1.5%"></span><span class="seg spam" style="width:1.1%"></span></span>
+    <span class="alt">next: toxic 0.01</span>
+  </div>
+  <div class="body">
+    <p class="text">Honestly I think this assignment is too easy for 15 marks, the AI does 80% of the work. Grading should focus more on the reflection part.</p>
+    <p class="meta">Nikhil Bansal · Submission &amp; grading · 2026-10-12 20:40</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 14?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 14" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="15" data-label="acceptable" data-confidence="0.8932" data-low="0" data-search="#15 my quiz app for gate prep is up. feedback welcome, especially on the scoring logic — not sure the negative marking works right. ankit sharma share your artifacts">
+  <div class="id">#15</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.89</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.3%"></span><span class="seg toxic" style="width:1.7%"></span><span class="seg spam" style="width:2.0%"></span></span>
+    <span class="alt">next: spam 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">My quiz app for GATE prep is up. Feedback welcome, especially on the scoring logic — not sure the negative marking works right.</p>
+    <p class="meta">Ankit Sharma · Share your artifacts · 2026-10-13 08:55</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 15?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 15" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="16" data-label="acceptable" data-confidence="0.9044" data-low="0" data-search="#16 tried it ankit, the negative marking subtracts 1/3 even for unattempted questions. check the condition where you compute the score. meera krishnan share your artifacts">
+  <div class="id">#16</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.90</span>
+    <span class="bar" role="img" title="acceptable 0.97, toxic 0.02, spam 0.02" aria-label="acceptable 0.97, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.7%"></span><span class="seg toxic" style="width:1.8%"></span><span class="seg spam" style="width:1.5%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Tried it Ankit, the negative marking subtracts 1/3 even for unattempted questions. Check the condition where you compute the score.</p>
+    <p class="meta">Meera Krishnan · Share your artifacts · 2026-10-13 09:30</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 16?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 16" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row spam" data-id="17" data-label="spam" data-confidence="0.9456" data-low="0" data-search="#17 earn ₹5000 daily from home using ai tools!! no investment. students also eligible. dm me or visit earnwithai-india.in ritu verma general">
+  <div class="id">#17</div>
+  <div class="verdict">
+    <span class="badge">spam</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.95</span>
+    <span class="bar" role="img" title="acceptable 0.01, toxic 0.01, spam 0.98" aria-label="acceptable 0.01, toxic 0.01, spam 0.98"><span class="seg acceptable" style="width:0.9%"></span><span class="seg toxic" style="width:0.9%"></span><span class="seg spam" style="width:98.2%"></span></span>
+    <span class="alt">next: acceptable 0.01</span>
+  </div>
+  <div class="body">
+    <p class="text">Earn ₹5000 daily from home using AI tools!! No investment. Students also eligible. DM me or visit earnwithai-india.in</p>
+    <p class="meta">Ritu Verma · General · 2026-10-13 10:12</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 17?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="acceptable">acceptable</option><option value="toxic">toxic</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 17" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="18" data-label="acceptable" data-confidence="0.9099" data-low="0" data-search="#18 sir, the rubric says &quot;originality&quot; — does a to-do app count as original if we add a feature like voice input? tanvi gupta submission &amp; grading">
+  <div class="id">#18</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.91</span>
+    <span class="bar" role="img" title="acceptable 0.97, toxic 0.02, spam 0.01" aria-label="acceptable 0.97, toxic 0.02, spam 0.01"><span class="seg acceptable" style="width:96.9%"></span><span class="seg toxic" style="width:1.6%"></span><span class="seg spam" style="width:1.5%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Sir, the rubric says &quot;originality&quot; — does a to-do app count as original if we add a feature like voice input?</p>
+    <p class="meta">Tanvi Gupta · Submission &amp; grading · 2026-10-13 11:05</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 18?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 18" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row toxic" data-id="19" data-label="toxic" data-confidence="0.7100" data-low="0" data-search="#19 bro your app looks like it was made by a 5th class kid lol. delete it and save us the embarrassment 🤡 rahul chauhan share your artifacts">
+  <div class="id">#19</div>
+  <div class="verdict">
+    <span class="badge">toxic</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.71</span>
+    <span class="bar" role="img" title="acceptable 0.10, toxic 0.89, spam 0.01" aria-label="acceptable 0.10, toxic 0.89, spam 0.01"><span class="seg acceptable" style="width:9.5%"></span><span class="seg toxic" style="width:89.3%"></span><span class="seg spam" style="width:1.2%"></span></span>
+    <span class="alt">next: acceptable 0.10</span>
+  </div>
+  <div class="body">
+    <p class="text">Bro your app looks like it was made by a 5th class kid lol. Delete it and save us the embarrassment 🤡</p>
+    <p class="meta">Rahul Chauhan · Share your artifacts · 2026-10-13 11:48</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 19?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="acceptable">acceptable</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 19" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="20" data-label="acceptable" data-confidence="0.8833" data-low="0" data-search="#20 thank you ma&#x27;am for the extra session on prompting yesterday. the bit about giving examples of the output format was super useful. ishita banerjee general">
+  <div class="id">#20</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.88</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.0%"></span><span class="seg toxic" style="width:2.2%"></span><span class="seg spam" style="width:1.8%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Thank you ma&#x27;am for the extra session on prompting yesterday. The bit about giving examples of the output format was super useful.</p>
+    <p class="meta">Ishita Banerjee · General · 2026-10-13 12:20</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 20?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 20" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="21" data-label="acceptable" data-confidence="0.8873" data-low="0" data-search="#21 codex wrote my tests but half of them were testing the wrong thing. lesson learned: read the generated tests, don&#x27;t just see green ✅ and move on. siddharth rao doubts">
+  <div class="id">#21</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.89</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.1%"></span><span class="seg toxic" style="width:2.0%"></span><span class="seg spam" style="width:1.8%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Codex wrote my tests but half of them were testing the wrong thing. Lesson learned: read the generated tests, don&#x27;t just see green ✅ and move on.</p>
+    <p class="meta">Siddharth Rao · Doubts · 2026-10-13 13:44</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 21?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 21" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="22" data-label="acceptable" data-confidence="0.9002" data-low="0" data-search="#22 is anyone else getting &quot;rate limit exceeded&quot; on the free tier? it&#x27;s been blocking me since afternoon. aman tiwari doubts">
+  <div class="id">#22</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.90</span>
+    <span class="bar" role="img" title="acceptable 0.97, toxic 0.02, spam 0.02" aria-label="acceptable 0.97, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.6%"></span><span class="seg toxic" style="width:1.8%"></span><span class="seg spam" style="width:1.6%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Is anyone else getting &quot;rate limit exceeded&quot; on the free tier? It&#x27;s been blocking me since afternoon.</p>
+    <p class="meta">Aman Tiwari · Doubts · 2026-10-13 15:10</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 22?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 22" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="23" data-label="acceptable" data-confidence="0.8875" data-low="0" data-search="#23 yes same, try after midnight, it reset for me around 12:30. pooja nair doubts">
+  <div class="id">#23</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.89</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.1%"></span><span class="seg toxic" style="width:1.9%"></span><span class="seg spam" style="width:2.0%"></span></span>
+    <span class="alt">next: spam 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Yes same, try after midnight, it reset for me around 12:30.</p>
+    <p class="meta">Pooja Nair · Doubts · 2026-10-13 15:26</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 23?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 23" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row spam" data-id="24" data-label="spam" data-confidence="0.7804" data-low="0" data-search="#24 subscribe to my youtube channel &quot;techwithraju&quot; for the full solution of cs307 assignment 3 step by step!! link in bio. like share subscribe 🙏🙏 raju tech general">
+  <div class="id">#24</div>
+  <div class="verdict">
+    <span class="badge">spam</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.78</span>
+    <span class="bar" role="img" title="acceptable 0.06, toxic 0.02, spam 0.92" aria-label="acceptable 0.06, toxic 0.02, spam 0.92"><span class="seg acceptable" style="width:6.0%"></span><span class="seg toxic" style="width:1.8%"></span><span class="seg spam" style="width:92.2%"></span></span>
+    <span class="alt">next: acceptable 0.06</span>
+  </div>
+  <div class="body">
+    <p class="text">Subscribe to my YouTube channel &quot;TechWithRaju&quot; for the full solution of CS307 assignment 3 step by step!! Link in bio. Like share subscribe 🙏🙏</p>
+    <p class="meta">Raju Tech · General · 2026-10-13 16:03</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 24?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="acceptable">acceptable</option><option value="toxic">toxic</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 24" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="25" data-label="acceptable" data-confidence="0.9069" data-low="0" data-search="#25 our group made a canteen menu voting app. problem: anyone can vote 100 times by refreshing. any simple way to stop this without a login? kavya pillai share your artifacts">
+  <div class="id">#25</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.91</span>
+    <span class="bar" role="img" title="acceptable 0.97, toxic 0.02, spam 0.02" aria-label="acceptable 0.97, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.8%"></span><span class="seg toxic" style="width:1.6%"></span><span class="seg spam" style="width:1.6%"></span></span>
+    <span class="alt">next: spam 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Our group made a canteen menu voting app. Problem: anyone can vote 100 times by refreshing. Any simple way to stop this without a login?</p>
+    <p class="meta">Kavya Pillai · Share your artifacts · 2026-10-13 17:22</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 25?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 25" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="26" data-label="acceptable" data-confidence="0.8509" data-low="0" data-search="#26 use a localstorage flag for basic prevention, it&#x27;s not secure but for a class demo it&#x27;s fine. or ask for roll number and check duplicates. harsh agarwal share your artifacts">
+  <div class="id">#26</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.85</span>
+    <span class="bar" role="img" title="acceptable 0.95, toxic 0.02, spam 0.03" aria-label="acceptable 0.95, toxic 0.02, spam 0.03"><span class="seg acceptable" style="width:94.8%"></span><span class="seg toxic" style="width:2.4%"></span><span class="seg spam" style="width:2.7%"></span></span>
+    <span class="alt">next: spam 0.03</span>
+  </div>
+  <div class="body">
+    <p class="text">Use a localStorage flag for basic prevention, it&#x27;s not secure but for a class demo it&#x27;s fine. Or ask for roll number and check duplicates.</p>
+    <p class="meta">Harsh Agarwal · Share your artifacts · 2026-10-13 17:40</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 26?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 26" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row toxic" data-id="27" data-label="toxic" data-confidence="0.4972" data-low="1" data-search="#27 girls in this class only get good marks because sir is soft on them. ishita&#x27;s project is average at best. deepak mishra submission &amp; grading">
+  <div class="id">#27</div>
+  <div class="verdict">
+    <span class="badge">toxic</span>
+    <span class="conf low" title="Clef's confidence, from 0 to 1">⚠ confidence 0.50</span>
+    <span class="bar" role="img" title="acceptable 0.20, toxic 0.79, spam 0.01" aria-label="acceptable 0.20, toxic 0.79, spam 0.01"><span class="seg acceptable" style="width:19.6%"></span><span class="seg toxic" style="width:79.1%"></span><span class="seg spam" style="width:1.3%"></span></span>
+    <span class="alt">next: acceptable 0.20</span>
+  </div>
+  <div class="body">
+    <p class="text">Girls in this class only get good marks because sir is soft on them. Ishita&#x27;s project is average at best.</p>
+    <p class="meta">Deepak Mishra · Submission &amp; grading · 2026-10-13 19:05</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 27?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="acceptable">acceptable</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 27" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="28" data-label="acceptable" data-confidence="0.8640" data-low="0" data-search="#28 sharing a tip: ask claude to explain the code it wrote line by line before you submit. viva mein pakde jaoge otherwise 😅 omkar jadhav doubts">
+  <div class="id">#28</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.86</span>
+    <span class="bar" role="img" title="acceptable 0.95, toxic 0.02, spam 0.02" aria-label="acceptable 0.95, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:95.3%"></span><span class="seg toxic" style="width:2.3%"></span><span class="seg spam" style="width:2.4%"></span></span>
+    <span class="alt">next: spam 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Sharing a tip: ask Claude to explain the code it wrote line by line before you submit. Viva mein pakde jaoge otherwise 😅</p>
+    <p class="meta">Omkar Jadhav · Doubts · 2026-10-13 20:30</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 28?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 28" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="29" data-label="acceptable" data-confidence="0.8951" data-low="0" data-search="#29 is the viva individual or group-wise? some of us did most of the work and others just watched. prateek saxena submission &amp; grading">
+  <div class="id">#29</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.90</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.01" aria-label="acceptable 0.96, toxic 0.02, spam 0.01"><span class="seg acceptable" style="width:96.4%"></span><span class="seg toxic" style="width:2.2%"></span><span class="seg spam" style="width:1.4%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Is the viva individual or group-wise? Some of us did most of the work and others just watched.</p>
+    <p class="meta">Prateek Saxena · Submission &amp; grading · 2026-10-14 09:02</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 29?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 29" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="30" data-label="acceptable" data-confidence="0.8798" data-low="0" data-search="#30 ^ this. in my group one member didn&#x27;t even open the repo. how do we report this without drama? ritika sen submission &amp; grading">
+  <div class="id">#30</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.88</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.03, spam 0.02" aria-label="acceptable 0.96, toxic 0.03, spam 0.02"><span class="seg acceptable" style="width:95.9%"></span><span class="seg toxic" style="width:2.6%"></span><span class="seg spam" style="width:1.5%"></span></span>
+    <span class="alt">next: toxic 0.03</span>
+  </div>
+  <div class="body">
+    <p class="text">^ this. In my group one member didn&#x27;t even open the repo. How do we report this without drama?</p>
+    <p class="meta">Ritika Sen · Submission &amp; grading · 2026-10-14 09:20</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 30?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 30" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row toxic" data-id="31" data-label="toxic" data-confidence="0.8562" data-low="0" data-search="#31 @karan we all know you&#x27;re the one who didn&#x27;t open the repo. useless fellow, always free-riding. get lost. rahul chauhan submission &amp; grading">
+  <div class="id">#31</div>
+  <div class="verdict">
+    <span class="badge">toxic</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.86</span>
+    <span class="bar" role="img" title="acceptable 0.04, toxic 0.95, spam 0.01" aria-label="acceptable 0.04, toxic 0.95, spam 0.01"><span class="seg acceptable" style="width:4.0%"></span><span class="seg toxic" style="width:95.0%"></span><span class="seg spam" style="width:1.0%"></span></span>
+    <span class="alt">next: acceptable 0.04</span>
+  </div>
+  <div class="body">
+    <p class="text">@Karan we all know you&#x27;re the one who didn&#x27;t open the repo. Useless fellow, always free-riding. Get lost.</p>
+    <p class="meta">Rahul Chauhan · Submission &amp; grading · 2026-10-14 09:41</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 31?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="acceptable">acceptable</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 31" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="32" data-label="acceptable" data-confidence="0.8969" data-low="0" data-search="#32 can we use gemini or other models, or strictly claude/codex? the assignment title says claude/codex but the pdf says &quot;any ai coding assistant&quot;. aditya kulkarni doubts">
+  <div class="id">#32</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.90</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.5%"></span><span class="seg toxic" style="width:1.9%"></span><span class="seg spam" style="width:1.7%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Can we use Gemini or other models, or strictly Claude/Codex? The assignment title says Claude/Codex but the PDF says &quot;any AI coding assistant&quot;.</p>
+    <p class="meta">Aditya Kulkarni · Doubts · 2026-10-14 10:15</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 32?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 32" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row spam" data-id="33" data-label="spam" data-confidence="0.9442" data-low="0" data-search="#33 urgent: cs307 end-sem question paper leaked!! get it before it&#x27;s removed. ₹499 only. pay on upi 9000012345@upi and send screenshot. exam_updates_2026 general">
+  <div class="id">#33</div>
+  <div class="verdict">
+    <span class="badge">spam</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.94</span>
+    <span class="bar" role="img" title="acceptable 0.01, toxic 0.01, spam 0.98" aria-label="acceptable 0.01, toxic 0.01, spam 0.98"><span class="seg acceptable" style="width:1.1%"></span><span class="seg toxic" style="width:0.8%"></span><span class="seg spam" style="width:98.1%"></span></span>
+    <span class="alt">next: acceptable 0.01</span>
+  </div>
+  <div class="body">
+    <p class="text">URGENT: CS307 end-sem question paper leaked!! Get it before it&#x27;s removed. ₹499 only. Pay on UPI 9000012345@upi and send screenshot.</p>
+    <p class="meta">exam_updates_2026 · General · 2026-10-14 11:00</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 33?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="acceptable">acceptable</option><option value="toxic">toxic</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 33" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="34" data-label="acceptable" data-confidence="0.9131" data-low="0" data-search="#34 sir, the submission link on moodle is showing &quot;closed&quot; even though the deadline is tonight 11:59 pm. shreya patil submission &amp; grading">
+  <div class="id">#34</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.91</span>
+    <span class="bar" role="img" title="acceptable 0.97, toxic 0.02, spam 0.01" aria-label="acceptable 0.97, toxic 0.02, spam 0.01"><span class="seg acceptable" style="width:97.0%"></span><span class="seg toxic" style="width:1.6%"></span><span class="seg spam" style="width:1.3%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Sir, the submission link on Moodle is showing &quot;closed&quot; even though the deadline is tonight 11:59 PM.</p>
+    <p class="meta">Shreya Patil · Submission &amp; grading · 2026-10-14 21:12</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 34?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 34" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="35" data-label="acceptable" data-confidence="0.8728" data-low="0" data-search="#35 it&#x27;s open now, please refresh. it was a timezone setting issue on the course page. rakesh m (ta) submission &amp; grading">
+  <div class="id">#35</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.87</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:95.6%"></span><span class="seg toxic" style="width:2.2%"></span><span class="seg spam" style="width:2.1%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">It&#x27;s open now, please refresh. It was a timezone setting issue on the course page.</p>
+    <p class="meta">Rakesh M (TA) · Submission &amp; grading · 2026-10-14 21:30</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 35?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 35" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="36" data-label="acceptable" data-confidence="0.8922" data-low="0" data-search="#36 my artifact helps my mom track her tailoring orders. she actually uses it now! never thought an assignment would be useful at home. divya hegde share your artifacts">
+  <div class="id">#36</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.89</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.3%"></span><span class="seg toxic" style="width:2.0%"></span><span class="seg spam" style="width:1.7%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">My artifact helps my mom track her tailoring orders. She actually uses it now! Never thought an assignment would be useful at home.</p>
+    <p class="meta">Divya Hegde · Share your artifacts · 2026-10-15 08:40</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 36?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 36" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="37" data-label="acceptable" data-confidence="0.8807" data-low="0" data-search="#37 that&#x27;s amazing divya 👏 maybe add a whatsapp reminder for due dates? could be a nice extension. ananya joshi share your artifacts">
+  <div class="id">#37</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.88</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:95.9%"></span><span class="seg toxic" style="width:2.1%"></span><span class="seg spam" style="width:2.0%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">That&#x27;s amazing Divya 👏 Maybe add a WhatsApp reminder for due dates? Could be a nice extension.</p>
+    <p class="meta">Ananya Joshi · Share your artifacts · 2026-10-15 09:05</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 37?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 37" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="38" data-label="acceptable" data-confidence="0.8727" data-low="0" data-search="#38 doubt: if claude generates code that&#x27;s similar to some open-source project, is that plagiarism? how do we cite it? kunal bhatia doubts">
+  <div class="id">#38</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.87</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:95.6%"></span><span class="seg toxic" style="width:2.4%"></span><span class="seg spam" style="width:2.0%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Doubt: if Claude generates code that&#x27;s similar to some open-source project, is that plagiarism? How do we cite it?</p>
+    <p class="meta">Kunal Bhatia · Doubts · 2026-10-15 10:18</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 38?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 38" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="39" data-label="acceptable" data-confidence="0.8686" data-low="0" data-search="#39 good question. mention the tool and your prompts in the reflection, and if you knowingly used a library or snippet, cite it like any other source. dr. lakshmi narayanan doubts">
+  <div class="id">#39</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.87</span>
+    <span class="bar" role="img" title="acceptable 0.95, toxic 0.02, spam 0.02" aria-label="acceptable 0.95, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:95.5%"></span><span class="seg toxic" style="width:2.3%"></span><span class="seg spam" style="width:2.2%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Good question. Mention the tool and your prompts in the reflection, and if you knowingly used a library or snippet, cite it like any other source.</p>
+    <p class="meta">Dr. Lakshmi Narayanan · Doubts · 2026-10-15 11:02</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 39?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 39" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row spam" data-id="40" data-label="spam" data-confidence="0.9337" data-low="0" data-search="#40 cheap laptops for engineering students!! i5 12th gen just ₹18,999. limited stock. call shree computers, shivaji nagar 📞 90000 54321 shree computers general">
+  <div class="id">#40</div>
+  <div class="verdict">
+    <span class="badge">spam</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.93</span>
+    <span class="bar" role="img" title="acceptable 0.01, toxic 0.01, spam 0.98" aria-label="acceptable 0.01, toxic 0.01, spam 0.98"><span class="seg acceptable" style="width:1.2%"></span><span class="seg toxic" style="width:1.1%"></span><span class="seg spam" style="width:97.8%"></span></span>
+    <span class="alt">next: acceptable 0.01</span>
+  </div>
+  <div class="body">
+    <p class="text">Cheap laptops for engineering students!! i5 12th gen just ₹18,999. Limited stock. Call Shree Computers, Shivaji Nagar 📞 90000 54321</p>
+    <p class="meta">Shree Computers · General · 2026-10-15 12:30</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 40?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="acceptable">acceptable</option><option value="toxic">toxic</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 40" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row toxic" data-id="41" data-label="toxic" data-confidence="0.4969" data-low="1" data-search="#41 this forum is full of sir&#x27;s chamchas. everybody praising every useless app. fake people. vikram singh share your artifacts">
+  <div class="id">#41</div>
+  <div class="verdict">
+    <span class="badge">toxic</span>
+    <span class="conf low" title="Clef's confidence, from 0 to 1">⚠ confidence 0.50</span>
+    <span class="bar" role="img" title="acceptable 0.19, toxic 0.79, spam 0.02" aria-label="acceptable 0.19, toxic 0.79, spam 0.02"><span class="seg acceptable" style="width:18.7%"></span><span class="seg toxic" style="width:79.3%"></span><span class="seg spam" style="width:1.9%"></span></span>
+    <span class="alt">next: acceptable 0.19</span>
+  </div>
+  <div class="body">
+    <p class="text">This forum is full of sir&#x27;s chamchas. Everybody praising every useless app. Fake people.</p>
+    <p class="meta">Vikram Singh · Share your artifacts · 2026-10-15 13:15</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 41?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="acceptable">acceptable</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 41" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="42" data-label="acceptable" data-confidence="0.9152" data-low="0" data-search="#42 i&#x27;m not sure using ai for assignments is actually teaching us anything. i learned more debugging the output than from the tool itself. kunal bhatia general">
+  <div class="id">#42</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.92</span>
+    <span class="bar" role="img" title="acceptable 0.97, toxic 0.02, spam 0.01" aria-label="acceptable 0.97, toxic 0.02, spam 0.01"><span class="seg acceptable" style="width:97.1%"></span><span class="seg toxic" style="width:1.6%"></span><span class="seg spam" style="width:1.3%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">I&#x27;m not sure using AI for assignments is actually teaching us anything. I learned more debugging the output than from the tool itself.</p>
+    <p class="meta">Kunal Bhatia · General · 2026-10-15 14:00</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 42?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 42" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="43" data-label="acceptable" data-confidence="0.8942" data-low="0" data-search="#43 disagree a bit — knowing what to ask and how to check the output is itself a skill. industry is going this way anyway. siddharth rao general">
+  <div class="id">#43</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.89</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.4%"></span><span class="seg toxic" style="width:2.0%"></span><span class="seg spam" style="width:1.6%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Disagree a bit — knowing what to ask and how to check the output is itself a skill. Industry is going this way anyway.</p>
+    <p class="meta">Siddharth Rao · General · 2026-10-15 14:22</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 43?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 43" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="44" data-label="acceptable" data-confidence="0.8953" data-low="0" data-search="#44 my codex output used a deprecated pandas function (append). fixed it with concat. posting in case anyone else hits the same error. vivek menon doubts">
+  <div class="id">#44</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.90</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.4%"></span><span class="seg toxic" style="width:1.7%"></span><span class="seg spam" style="width:1.8%"></span></span>
+    <span class="alt">next: spam 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">My Codex output used a deprecated pandas function (append). Fixed it with concat. Posting in case anyone else hits the same error.</p>
+    <p class="meta">Vivek Menon · Doubts · 2026-10-15 16:35</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 44?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 44" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="45" data-label="acceptable" data-confidence="0.8957" data-low="0" data-search="#45 thanks vivek, was stuck on exactly this for an hour 🙏 tanvi gupta doubts">
+  <div class="id">#45</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.90</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.4%"></span><span class="seg toxic" style="width:1.9%"></span><span class="seg spam" style="width:1.6%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Thanks Vivek, was stuck on exactly this for an hour 🙏</p>
+    <p class="meta">Tanvi Gupta · Doubts · 2026-10-15 16:50</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 45?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 45" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row spam" data-id="46" data-label="spam" data-confidence="0.9438" data-low="0" data-search="#46 💰 crypto signals group 💰 90% accuracy, students making ₹50k/month. join fast before closing: bit.ly/crypto-signal-vip cryptoking official general">
+  <div class="id">#46</div>
+  <div class="verdict">
+    <span class="badge">spam</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.94</span>
+    <span class="bar" role="img" title="acceptable 0.01, toxic 0.01, spam 0.98" aria-label="acceptable 0.01, toxic 0.01, spam 0.98"><span class="seg acceptable" style="width:1.0%"></span><span class="seg toxic" style="width:0.9%"></span><span class="seg spam" style="width:98.1%"></span></span>
+    <span class="alt">next: acceptable 0.01</span>
+  </div>
+  <div class="body">
+    <p class="text">💰 Crypto signals group 💰 90% accuracy, students making ₹50k/month. Join fast before closing: bit.ly/crypto-signal-vip</p>
+    <p class="meta">CryptoKing Official · General · 2026-10-15 18:00</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 46?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="acceptable">acceptable</option><option value="toxic">toxic</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 46" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="47" data-label="acceptable" data-confidence="0.9182" data-low="0" data-search="#47 ma&#x27;am, will the marks be uploaded before the diwali break? mohd. faizan submission &amp; grading">
+  <div class="id">#47</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.92</span>
+    <span class="bar" role="img" title="acceptable 0.97, toxic 0.01, spam 0.01" aria-label="acceptable 0.97, toxic 0.01, spam 0.01"><span class="seg acceptable" style="width:97.2%"></span><span class="seg toxic" style="width:1.5%"></span><span class="seg spam" style="width:1.3%"></span></span>
+    <span class="alt">next: toxic 0.01</span>
+  </div>
+  <div class="body">
+    <p class="text">Ma&#x27;am, will the marks be uploaded before the Diwali break?</p>
+    <p class="meta">Mohd. Faizan · Submission &amp; grading · 2026-10-16 09:10</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 47?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 47" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row toxic" data-id="48" data-label="toxic" data-confidence="0.8230" data-low="0" data-search="#48 whoever gave my project 2/10 in peer review, you&#x27;re a jealous loser. i know who you are and i&#x27;ll see you outside the lab. deepak mishra submission &amp; grading">
+  <div class="id">#48</div>
+  <div class="verdict">
+    <span class="badge">toxic</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.82</span>
+    <span class="bar" role="img" title="acceptable 0.05, toxic 0.94, spam 0.01" aria-label="acceptable 0.05, toxic 0.94, spam 0.01"><span class="seg acceptable" style="width:5.2%"></span><span class="seg toxic" style="width:93.8%"></span><span class="seg spam" style="width:1.0%"></span></span>
+    <span class="alt">next: acceptable 0.05</span>
+  </div>
+  <div class="body">
+    <p class="text">Whoever gave my project 2/10 in peer review, you&#x27;re a jealous loser. I know who you are and I&#x27;ll see you outside the lab.</p>
+    <p class="meta">Deepak Mishra · Submission &amp; grading · 2026-10-16 10:25</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 48?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="acceptable">acceptable</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 48" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="49" data-label="acceptable" data-confidence="0.9003" data-low="0" data-search="#49 peer review feedback was helpful, thanks to whoever pointed out the mobile layout breaking. fixed it. kavya pillai submission &amp; grading">
+  <div class="id">#49</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.90</span>
+    <span class="bar" role="img" title="acceptable 0.97, toxic 0.02, spam 0.02" aria-label="acceptable 0.97, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.6%"></span><span class="seg toxic" style="width:1.9%"></span><span class="seg spam" style="width:1.5%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Peer review feedback was helpful, thanks to whoever pointed out the mobile layout breaking. Fixed it.</p>
+    <p class="meta">Kavya Pillai · Submission &amp; grading · 2026-10-16 11:00</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 49?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 49" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="50" data-label="acceptable" data-confidence="0.8970" data-low="0" data-search="#50 can someone explain what &quot;artifact&quot; means here? is it just the code or a deployed thing people can open? riya thomas doubts">
+  <div class="id">#50</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.90</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.5%"></span><span class="seg toxic" style="width:1.8%"></span><span class="seg spam" style="width:1.7%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Can someone explain what &quot;artifact&quot; means here? Is it just the code or a deployed thing people can open?</p>
+    <p class="meta">Riya Thomas · Doubts · 2026-10-16 11:40</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 50?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 50" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="51" data-label="acceptable" data-confidence="0.8827" data-low="0" data-search="#51 from the pdf: artifact = a working, shareable thing (web page, tool, small app) + a 1-page reflection. code alone isn&#x27;t enough. rakesh m (ta) doubts">
+  <div class="id">#51</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.88</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.0%"></span><span class="seg toxic" style="width:2.1%"></span><span class="seg spam" style="width:2.0%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">From the PDF: artifact = a working, shareable thing (web page, tool, small app) + a 1-page reflection. Code alone isn&#x27;t enough.</p>
+    <p class="meta">Rakesh M (TA) · Doubts · 2026-10-16 12:05</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 51?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 51" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="52" data-label="acceptable" data-confidence="0.8854" data-low="0" data-search="#52 built a marathi–english vocabulary flashcard app. claude handled the devanagari fonts without issues, which surprised me. shruti deshpande share your artifacts">
+  <div class="id">#52</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.89</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.1%"></span><span class="seg toxic" style="width:2.2%"></span><span class="seg spam" style="width:1.8%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Built a Marathi–English vocabulary flashcard app. Claude handled the Devanagari fonts without issues, which surprised me.</p>
+    <p class="meta">Shruti Deshpande · Share your artifacts · 2026-10-16 14:15</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 52?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 52" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="53" data-label="acceptable" data-confidence="0.9006" data-low="0" data-search="#53 nice! does it do audio pronunciation? the browser speech api supports mr-in i think. karthik reddy share your artifacts">
+  <div class="id">#53</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.90</span>
+    <span class="bar" role="img" title="acceptable 0.97, toxic 0.02, spam 0.02" aria-label="acceptable 0.97, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.6%"></span><span class="seg toxic" style="width:1.8%"></span><span class="seg spam" style="width:1.6%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Nice! Does it do audio pronunciation? The browser speech API supports mr-IN I think.</p>
+    <p class="meta">Karthik Reddy · Share your artifacts · 2026-10-16 14:40</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 53?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 53" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row spam" data-id="54" data-label="spam" data-confidence="0.9466" data-low="0" data-search="#54 need help with your assignment? our phd experts do python, java, ml, ai projects. fast delivery in 24 hours. visit www.assignmenthelpzone.co.in or mail help@assignmenthelpzone.co.in assignment help zone general">
+  <div class="id">#54</div>
+  <div class="verdict">
+    <span class="badge">spam</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.95</span>
+    <span class="bar" role="img" title="acceptable 0.01, toxic 0.01, spam 0.98" aria-label="acceptable 0.01, toxic 0.01, spam 0.98"><span class="seg acceptable" style="width:1.0%"></span><span class="seg toxic" style="width:0.8%"></span><span class="seg spam" style="width:98.2%"></span></span>
+    <span class="alt">next: acceptable 0.01</span>
+  </div>
+  <div class="body">
+    <p class="text">Need help with your assignment? Our PhD experts do Python, Java, ML, AI projects. Fast delivery in 24 hours. Visit www.assignmenthelpzone.co.in or mail help@assignmenthelpzone.co.in</p>
+    <p class="meta">Assignment Help Zone · General · 2026-10-16 15:30</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 54?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="acceptable">acceptable</option><option value="toxic">toxic</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 54" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row toxic" data-id="55" data-label="toxic" data-confidence="0.7246" data-low="0" data-search="#55 ankit&#x27;s gate quiz app is trash just like his gate score will be 😂😂 saurabh yadav share your artifacts">
+  <div class="id">#55</div>
+  <div class="verdict">
+    <span class="badge">toxic</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.72</span>
+    <span class="bar" role="img" title="acceptable 0.09, toxic 0.90, spam 0.01" aria-label="acceptable 0.09, toxic 0.90, spam 0.01"><span class="seg acceptable" style="width:8.9%"></span><span class="seg toxic" style="width:89.9%"></span><span class="seg spam" style="width:1.2%"></span></span>
+    <span class="alt">next: acceptable 0.09</span>
+  </div>
+  <div class="body">
+    <p class="text">Ankit&#x27;s GATE quiz app is trash just like his GATE score will be 😂😂</p>
+    <p class="meta">Saurabh Yadav · Share your artifacts · 2026-10-16 16:02</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 55?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="acceptable">acceptable</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 55" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="56" data-label="acceptable" data-confidence="0.9118" data-low="0" data-search="#56 request: can the ta share a sample of a good reflection from last year? not sure what level of detail is expected. prateek saxena submission &amp; grading">
+  <div class="id">#56</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.91</span>
+    <span class="bar" role="img" title="acceptable 0.97, toxic 0.02, spam 0.01" aria-label="acceptable 0.97, toxic 0.02, spam 0.01"><span class="seg acceptable" style="width:97.0%"></span><span class="seg toxic" style="width:1.6%"></span><span class="seg spam" style="width:1.4%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Request: can the TA share a sample of a good reflection from last year? Not sure what level of detail is expected.</p>
+    <p class="meta">Prateek Saxena · Submission &amp; grading · 2026-10-16 18:20</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 56?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 56" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="57" data-label="acceptable" data-confidence="0.9089" data-low="0" data-search="#57 sir, i submitted the wrong link by mistake (my old repo). can you allow a resubmission? aman tiwari submission &amp; grading">
+  <div class="id">#57</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.91</span>
+    <span class="bar" role="img" title="acceptable 0.97, toxic 0.02, spam 0.01" aria-label="acceptable 0.97, toxic 0.02, spam 0.01"><span class="seg acceptable" style="width:96.9%"></span><span class="seg toxic" style="width:1.6%"></span><span class="seg spam" style="width:1.5%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Sir, I submitted the wrong link by mistake (my old repo). Can you allow a resubmission?</p>
+    <p class="meta">Aman Tiwari · Submission &amp; grading · 2026-10-16 22:45</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 57?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 57" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="58" data-label="acceptable" data-confidence="0.9008" data-low="0" data-search="#58 is it fine if our artifact uses a free public api (like weather)? or should everything be self-contained? riya thomas doubts">
+  <div class="id">#58</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.90</span>
+    <span class="bar" role="img" title="acceptable 0.97, toxic 0.02, spam 0.02" aria-label="acceptable 0.97, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.6%"></span><span class="seg toxic" style="width:1.8%"></span><span class="seg spam" style="width:1.6%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Is it fine if our artifact uses a free public API (like weather)? Or should everything be self-contained?</p>
+    <p class="meta">Riya Thomas · Doubts · 2026-10-17 09:00</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 58?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 58" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="59" data-label="acceptable" data-confidence="0.8923" data-low="0" data-search="#59 my experience: claude is better at explaining, codex felt faster for refactoring. both hallucinated a library function once. meera krishnan general">
+  <div class="id">#59</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.89</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.3%"></span><span class="seg toxic" style="width:2.0%"></span><span class="seg spam" style="width:1.7%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">My experience: Claude is better at explaining, Codex felt faster for refactoring. Both hallucinated a library function once.</p>
+    <p class="meta">Meera Krishnan · General · 2026-10-17 10:30</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 59?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 59" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="60" data-label="acceptable" data-confidence="0.8327" data-low="0" data-search="#60 agree. codex invented a &quot;pd.read_html_table&quot; function for me 😂 always run the code. nikhil bansal general">
+  <div class="id">#60</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.83</span>
+    <span class="bar" role="img" title="acceptable 0.94, toxic 0.03, spam 0.02" aria-label="acceptable 0.94, toxic 0.03, spam 0.02"><span class="seg acceptable" style="width:94.2%"></span><span class="seg toxic" style="width:3.4%"></span><span class="seg spam" style="width:2.4%"></span></span>
+    <span class="alt">next: toxic 0.03</span>
+  </div>
+  <div class="body">
+    <p class="text">Agree. Codex invented a &quot;pd.read_html_table&quot; function for me 😂 Always run the code.</p>
+    <p class="meta">Nikhil Bansal · General · 2026-10-17 10:52</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 60?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 60" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row toxic" data-id="61" data-label="toxic" data-confidence="0.7894" data-low="0" data-search="#61 shut up meera, nobody cares about your &quot;experience&quot;. topper behaviour as usual 🙄 rahul chauhan general">
+  <div class="id">#61</div>
+  <div class="verdict">
+    <span class="badge">toxic</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.79</span>
+    <span class="bar" role="img" title="acceptable 0.06, toxic 0.93, spam 0.02" aria-label="acceptable 0.06, toxic 0.93, spam 0.02"><span class="seg acceptable" style="width:6.0%"></span><span class="seg toxic" style="width:92.5%"></span><span class="seg spam" style="width:1.5%"></span></span>
+    <span class="alt">next: acceptable 0.06</span>
+  </div>
+  <div class="body">
+    <p class="text">Shut up Meera, nobody cares about your &quot;experience&quot;. Topper behaviour as usual 🙄</p>
+    <p class="meta">Rahul Chauhan · General · 2026-10-17 11:10</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 61?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="acceptable">acceptable</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 61" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="62" data-label="acceptable" data-confidence="0.8642" data-low="0" data-search="#62 our hostel group made an attendance tracker for the mess. uploaded screenshots to the drive folder as instructed. omkar jadhav share your artifacts">
+  <div class="id">#62</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.86</span>
+    <span class="bar" role="img" title="acceptable 0.95, toxic 0.02, spam 0.02" aria-label="acceptable 0.95, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:95.3%"></span><span class="seg toxic" style="width:2.5%"></span><span class="seg spam" style="width:2.2%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Our hostel group made an attendance tracker for the mess. Uploaded screenshots to the drive folder as instructed.</p>
+    <p class="meta">Omkar Jadhav · Share your artifacts · 2026-10-17 12:40</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 62?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 62" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row spam" data-id="63" data-label="spam" data-confidence="0.9369" data-low="0" data-search="#63 hello dear friends, i am selling original notes of all subjects 3rd year cse. pdf available at low price. contact on instagram @notes.wala.bhaiya notes wala bhaiya general">
+  <div class="id">#63</div>
+  <div class="verdict">
+    <span class="badge">spam</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.94</span>
+    <span class="bar" role="img" title="acceptable 0.01, toxic 0.01, spam 0.98" aria-label="acceptable 0.01, toxic 0.01, spam 0.98"><span class="seg acceptable" style="width:1.1%"></span><span class="seg toxic" style="width:1.0%"></span><span class="seg spam" style="width:97.9%"></span></span>
+    <span class="alt">next: acceptable 0.01</span>
+  </div>
+  <div class="body">
+    <p class="text">Hello dear friends, I am selling original notes of all subjects 3rd year CSE. PDF available at low price. Contact on Instagram @notes.wala.bhaiya</p>
+    <p class="meta">Notes Wala Bhaiya · General · 2026-10-17 13:30</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 63?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="acceptable">acceptable</option><option value="toxic">toxic</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 63" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="64" data-label="acceptable" data-confidence="0.9055" data-low="0" data-search="#64 ma&#x27;am, our artifact is for visually impaired users (screen-reader friendly bus timings). can we get extra time to test it with actual users from the ngo? arjun das submission &amp; grading">
+  <div class="id">#64</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.91</span>
+    <span class="bar" role="img" title="acceptable 0.97, toxic 0.02, spam 0.01" aria-label="acceptable 0.97, toxic 0.02, spam 0.01"><span class="seg acceptable" style="width:96.8%"></span><span class="seg toxic" style="width:1.8%"></span><span class="seg spam" style="width:1.4%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Ma&#x27;am, our artifact is for visually impaired users (screen-reader friendly bus timings). Can we get extra time to test it with actual users from the NGO?</p>
+    <p class="meta">Arjun Das · Submission &amp; grading · 2026-10-17 15:05</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 64?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 64" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="65" data-label="acceptable" data-confidence="0.8738" data-low="0" data-search="#65 that&#x27;s a great project, arjun. happy to help test with nvda if you need another tester. neha kapoor submission &amp; grading">
+  <div class="id">#65</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.87</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:95.7%"></span><span class="seg toxic" style="width:2.3%"></span><span class="seg spam" style="width:2.1%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">That&#x27;s a great project, Arjun. Happy to help test with NVDA if you need another tester.</p>
+    <p class="meta">Neha Kapoor · Submission &amp; grading · 2026-10-17 15:30</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 65?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 65" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="66" data-label="acceptable" data-confidence="0.8912" data-low="0" data-search="#66 kya reflection hindi mein likh sakte hain? my english writing is not that good but i can explain properly in hindi. sonu kumar doubts">
+  <div class="id">#66</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.89</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.3%"></span><span class="seg toxic" style="width:2.0%"></span><span class="seg spam" style="width:1.7%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Kya reflection Hindi mein likh sakte hain? My English writing is not that good but I can explain properly in Hindi.</p>
+    <p class="meta">Sonu Kumar · Doubts · 2026-10-17 17:10</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 66?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 66" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="67" data-label="acceptable" data-confidence="0.9177" data-low="0" data-search="#67 the rubric weightage is unclear. 40% artifact, 40% reflection, 20% viva — is that correct? the slides said something different. ishita banerjee submission &amp; grading">
+  <div class="id">#67</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.92</span>
+    <span class="bar" role="img" title="acceptable 0.97, toxic 0.02, spam 0.01" aria-label="acceptable 0.97, toxic 0.02, spam 0.01"><span class="seg acceptable" style="width:97.2%"></span><span class="seg toxic" style="width:1.6%"></span><span class="seg spam" style="width:1.2%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">The rubric weightage is unclear. 40% artifact, 40% reflection, 20% viva — is that correct? The slides said something different.</p>
+    <p class="meta">Ishita Banerjee · Submission &amp; grading · 2026-10-18 09:25</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 67?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 67" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="68" data-label="acceptable" data-confidence="0.9289" data-low="0" data-search="#68 the grading for assignment 2 was unfair in my opinion, the same output got different marks in different batches. please clarify the re-evaluation process. ritika sen submission &amp; grading">
+  <div class="id">#68</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.93</span>
+    <span class="bar" role="img" title="acceptable 0.98, toxic 0.01, spam 0.01" aria-label="acceptable 0.98, toxic 0.01, spam 0.01"><span class="seg acceptable" style="width:97.6%"></span><span class="seg toxic" style="width:1.4%"></span><span class="seg spam" style="width:1.1%"></span></span>
+    <span class="alt">next: toxic 0.01</span>
+  </div>
+  <div class="body">
+    <p class="text">The grading for assignment 2 was unfair in my opinion, the same output got different marks in different batches. Please clarify the re-evaluation process.</p>
+    <p class="meta">Ritika Sen · Submission &amp; grading · 2026-10-18 10:00</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 68?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 68" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row toxic" data-id="69" data-label="toxic" data-confidence="0.7059" data-low="0" data-search="#69 ta doesn&#x27;t know anything himself, how will he grade ai projects? clueless fellow should go back to school. vikram singh submission &amp; grading">
+  <div class="id">#69</div>
+  <div class="verdict">
+    <span class="badge">toxic</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.71</span>
+    <span class="bar" role="img" title="acceptable 0.10, toxic 0.89, spam 0.01" aria-label="acceptable 0.10, toxic 0.89, spam 0.01"><span class="seg acceptable" style="width:9.9%"></span><span class="seg toxic" style="width:89.1%"></span><span class="seg spam" style="width:1.0%"></span></span>
+    <span class="alt">next: acceptable 0.10</span>
+  </div>
+  <div class="body">
+    <p class="text">TA doesn&#x27;t know anything himself, how will he grade AI projects? Clueless fellow should go back to school.</p>
+    <p class="meta">Vikram Singh · Submission &amp; grading · 2026-10-18 10:22</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 69?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="acceptable">acceptable</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 69" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="70" data-label="acceptable" data-confidence="0.9067" data-low="0" data-search="#70 tip for anyone using claude artifacts: ask it to add a &quot;reset data&quot; button. saved me during the demo when the test data got messed up. harsh agarwal doubts">
+  <div class="id">#70</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.91</span>
+    <span class="bar" role="img" title="acceptable 0.97, toxic 0.02, spam 0.02" aria-label="acceptable 0.97, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.8%"></span><span class="seg toxic" style="width:1.6%"></span><span class="seg spam" style="width:1.6%"></span></span>
+    <span class="alt">next: spam 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Tip for anyone using Claude artifacts: ask it to add a &quot;reset data&quot; button. Saved me during the demo when the test data got messed up.</p>
+    <p class="meta">Harsh Agarwal · Doubts · 2026-10-18 12:15</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 70?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 70" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row spam" data-id="71" data-label="spam" data-confidence="0.9428" data-low="0" data-search="#71 free iphone 17 giveaway for college students 🎉 just fill the form with your name, college id and aadhaar number: forms-giveaway-india.com/iphone giveaway india general">
+  <div class="id">#71</div>
+  <div class="verdict">
+    <span class="badge">spam</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.94</span>
+    <span class="bar" role="img" title="acceptable 0.01, toxic 0.01, spam 0.98" aria-label="acceptable 0.01, toxic 0.01, spam 0.98"><span class="seg acceptable" style="width:1.0%"></span><span class="seg toxic" style="width:1.0%"></span><span class="seg spam" style="width:98.1%"></span></span>
+    <span class="alt">next: acceptable 0.01</span>
+  </div>
+  <div class="body">
+    <p class="text">FREE iPhone 17 giveaway for college students 🎉 Just fill the form with your name, college ID and Aadhaar number: forms-giveaway-india.com/iphone</p>
+    <p class="meta">Giveaway India · General · 2026-10-18 13:00</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 71?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="acceptable">acceptable</option><option value="toxic">toxic</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 71" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="72" data-label="acceptable" data-confidence="0.8831" data-low="0" data-search="#72 our team used codex to convert old c++ lab programs into a small web visualizer for sorting algorithms. feedback welcome! gaurav pandey share your artifacts">
+  <div class="id">#72</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.88</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.0%"></span><span class="seg toxic" style="width:2.1%"></span><span class="seg spam" style="width:1.9%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Our team used Codex to convert old C++ lab programs into a small web visualizer for sorting algorithms. Feedback welcome!</p>
+    <p class="meta">Gaurav Pandey · Share your artifacts · 2026-10-18 15:45</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 72?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 72" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="73" data-label="acceptable" data-confidence="0.9038" data-low="0" data-search="#73 very nice, but the bubble sort animation is too fast to follow. maybe add a speed slider? shruti deshpande share your artifacts">
+  <div class="id">#73</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.90</span>
+    <span class="bar" role="img" title="acceptable 0.97, toxic 0.02, spam 0.02" aria-label="acceptable 0.97, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.7%"></span><span class="seg toxic" style="width:1.8%"></span><span class="seg spam" style="width:1.5%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Very nice, but the bubble sort animation is too fast to follow. Maybe add a speed slider?</p>
+    <p class="meta">Shruti Deshpande · Share your artifacts · 2026-10-18 16:10</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 73?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 73" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="74" data-label="acceptable" data-confidence="0.9039" data-low="0" data-search="#74 is there a word limit for the reflection? i wrote 1100 words, feels too long. tanvi gupta doubts">
+  <div class="id">#74</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.90</span>
+    <span class="bar" role="img" title="acceptable 0.97, toxic 0.02, spam 0.02" aria-label="acceptable 0.97, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.7%"></span><span class="seg toxic" style="width:1.8%"></span><span class="seg spam" style="width:1.5%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Is there a word limit for the reflection? I wrote 1100 words, feels too long.</p>
+    <p class="meta">Tanvi Gupta · Doubts · 2026-10-18 18:30</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 74?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 74" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="75" data-label="acceptable" data-confidence="0.8743" data-low="0" data-search="#75 ma&#x27;am said max 1 page, so around 500 words. pooja nair doubts">
+  <div class="id">#75</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.87</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:95.7%"></span><span class="seg toxic" style="width:2.3%"></span><span class="seg spam" style="width:2.0%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Ma&#x27;am said max 1 page, so around 500 words.</p>
+    <p class="meta">Pooja Nair · Doubts · 2026-10-18 18:45</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 75?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 75" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row toxic" data-id="76" data-label="toxic" data-confidence="0.4297" data-low="1" data-search="#76 everyone from that side of the hostel copies, it&#x27;s in their blood. don&#x27;t trust their &quot;original&quot; projects. deepak mishra share your artifacts">
+  <div class="id">#76</div>
+  <div class="verdict">
+    <span class="badge">toxic</span>
+    <span class="conf low" title="Clef's confidence, from 0 to 1">⚠ confidence 0.43</span>
+    <span class="bar" role="img" title="acceptable 0.22, toxic 0.76, spam 0.02" aria-label="acceptable 0.22, toxic 0.76, spam 0.02"><span class="seg acceptable" style="width:22.0%"></span><span class="seg toxic" style="width:75.5%"></span><span class="seg spam" style="width:2.5%"></span></span>
+    <span class="alt">next: acceptable 0.22</span>
+  </div>
+  <div class="body">
+    <p class="text">Everyone from that side of the hostel copies, it&#x27;s in their blood. Don&#x27;t trust their &quot;original&quot; projects.</p>
+    <p class="meta">Deepak Mishra · Share your artifacts · 2026-10-19 09:10</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 76?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="acceptable">acceptable</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 76" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="77" data-label="acceptable" data-confidence="0.9153" data-low="0" data-search="#77 sir, what happens if our deployed link stops working after submission (free hosting expires)? will we lose marks? gaurav pandey submission &amp; grading">
+  <div class="id">#77</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.92</span>
+    <span class="bar" role="img" title="acceptable 0.97, toxic 0.02, spam 0.01" aria-label="acceptable 0.97, toxic 0.02, spam 0.01"><span class="seg acceptable" style="width:97.1%"></span><span class="seg toxic" style="width:1.5%"></span><span class="seg spam" style="width:1.4%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Sir, what happens if our deployed link stops working after submission (free hosting expires)? Will we lose marks?</p>
+    <p class="meta">Gaurav Pandey · Submission &amp; grading · 2026-10-19 10:30</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 77?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 77" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="78" data-label="acceptable" data-confidence="0.8748" data-low="0" data-search="#78 i shared a short screen recording as a backup in case the link fails. maybe others should do the same. kavya pillai submission &amp; grading">
+  <div class="id">#78</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.87</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:95.7%"></span><span class="seg toxic" style="width:2.1%"></span><span class="seg spam" style="width:2.2%"></span></span>
+    <span class="alt">next: spam 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">I shared a short screen recording as a backup in case the link fails. Maybe others should do the same.</p>
+    <p class="meta">Kavya Pillai · Submission &amp; grading · 2026-10-19 10:50</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 78?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 78" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row spam" data-id="79" data-label="spam" data-confidence="0.9487" data-low="0" data-search="#79 👉 get 10,000 instagram followers in 1 day 👈 real &amp; active. best for students starting tech pages. whatsapp 90000 67890 instagrowth services general">
+  <div class="id">#79</div>
+  <div class="verdict">
+    <span class="badge">spam</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.95</span>
+    <span class="bar" role="img" title="acceptable 0.01, toxic 0.01, spam 0.98" aria-label="acceptable 0.01, toxic 0.01, spam 0.98"><span class="seg acceptable" style="width:0.9%"></span><span class="seg toxic" style="width:0.8%"></span><span class="seg spam" style="width:98.3%"></span></span>
+    <span class="alt">next: acceptable 0.01</span>
+  </div>
+  <div class="body">
+    <p class="text">👉 Get 10,000 Instagram followers in 1 day 👈 Real &amp; active. Best for students starting tech pages. WhatsApp 90000 67890</p>
+    <p class="meta">InstaGrowth Services · General · 2026-10-19 12:00</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 79?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="acceptable">acceptable</option><option value="toxic">toxic</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 79" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="80" data-label="acceptable" data-confidence="0.8979" data-low="0" data-search="#80 i&#x27;m struggling honestly. everyone is posting cool apps and mine barely works. is it okay to submit something simple if the reflection is honest? kunal bhatia general">
+  <div class="id">#80</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.90</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.5%"></span><span class="seg toxic" style="width:2.0%"></span><span class="seg spam" style="width:1.5%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">I&#x27;m struggling honestly. Everyone is posting cool apps and mine barely works. Is it okay to submit something simple if the reflection is honest?</p>
+    <p class="meta">Kunal Bhatia · General · 2026-10-19 21:40</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 80?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 80" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="81" data-label="acceptable" data-confidence="0.8681" data-low="0" data-search="#81 absolutely okay. sir said in class that the reflection about what failed counts a lot. don&#x27;t stress, simple + honest &gt; fancy + copied. neha kapoor general">
+  <div class="id">#81</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.87</span>
+    <span class="bar" role="img" title="acceptable 0.95, toxic 0.02, spam 0.02" aria-label="acceptable 0.95, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:95.5%"></span><span class="seg toxic" style="width:2.4%"></span><span class="seg spam" style="width:2.1%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Absolutely okay. Sir said in class that the reflection about what failed counts a lot. Don&#x27;t stress, simple + honest &gt; fancy + copied.</p>
+    <p class="meta">Neha Kapoor · General · 2026-10-19 22:05</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 81?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 81" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="82" data-label="acceptable" data-confidence="0.8914" data-low="0" data-search="#82 thank you neha, that really helps 🙂 kunal bhatia general">
+  <div class="id">#82</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.89</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.3%"></span><span class="seg toxic" style="width:2.1%"></span><span class="seg spam" style="width:1.7%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Thank you Neha, that really helps 🙂</p>
+    <p class="meta">Kunal Bhatia · General · 2026-10-19 22:20</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 82?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 82" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row toxic" data-id="83" data-label="toxic" data-confidence="0.5627" data-low="0" data-search="#83 lol kunal still crying about his project. maybe engineering isn&#x27;t for you bro, try ba. saurabh yadav general">
+  <div class="id">#83</div>
+  <div class="verdict">
+    <span class="badge">toxic</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.56</span>
+    <span class="bar" role="img" title="acceptable 0.16, toxic 0.83, spam 0.02" aria-label="acceptable 0.16, toxic 0.83, spam 0.02"><span class="seg acceptable" style="width:15.8%"></span><span class="seg toxic" style="width:82.7%"></span><span class="seg spam" style="width:1.6%"></span></span>
+    <span class="alt">next: acceptable 0.16</span>
+  </div>
+  <div class="body">
+    <p class="text">lol Kunal still crying about his project. Maybe engineering isn&#x27;t for you bro, try BA.</p>
+    <p class="meta">Saurabh Yadav · General · 2026-10-19 22:48</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 83?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="acceptable">acceptable</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 83" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="84" data-label="acceptable" data-confidence="0.8839" data-low="0" data-search="#84 doubt: claude gave different code for the same prompt twice. which one should we submit, and should we mention it? sonu kumar doubts">
+  <div class="id">#84</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.88</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.0%"></span><span class="seg toxic" style="width:2.1%"></span><span class="seg spam" style="width:1.9%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Doubt: Claude gave different code for the same prompt twice. Which one should we submit, and should we mention it?</p>
+    <p class="meta">Sonu Kumar · Doubts · 2026-10-20 09:30</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 84?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 84" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="85" data-label="acceptable" data-confidence="0.8817" data-low="0" data-search="#85 submit the one you tested and understand. mentioning the variation in your reflection is actually a good insight. meera krishnan doubts">
+  <div class="id">#85</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.88</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:95.9%"></span><span class="seg toxic" style="width:2.2%"></span><span class="seg spam" style="width:1.9%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Submit the one you tested and understand. Mentioning the variation in your reflection is actually a good insight.</p>
+    <p class="meta">Meera Krishnan · Doubts · 2026-10-20 09:55</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 85?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 85" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row spam" data-id="86" data-label="spam" data-confidence="0.9492" data-low="0" data-search="#86 part time job for students: typing work, ₹800/day, no target. registration fee only ₹299. reply &quot;interested&quot; with your number. work from home jobs general">
+  <div class="id">#86</div>
+  <div class="verdict">
+    <span class="badge">spam</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.95</span>
+    <span class="bar" role="img" title="acceptable 0.01, toxic 0.01, spam 0.98" aria-label="acceptable 0.01, toxic 0.01, spam 0.98"><span class="seg acceptable" style="width:0.9%"></span><span class="seg toxic" style="width:0.8%"></span><span class="seg spam" style="width:98.3%"></span></span>
+    <span class="alt">next: acceptable 0.01</span>
+  </div>
+  <div class="body">
+    <p class="text">Part time job for students: typing work, ₹800/day, no target. Registration fee only ₹299. Reply &quot;INTERESTED&quot; with your number.</p>
+    <p class="meta">Work From Home Jobs · General · 2026-10-20 11:00</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 86?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="acceptable">acceptable</option><option value="toxic">toxic</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 86" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="87" data-label="acceptable" data-confidence="0.8958" data-low="0" data-search="#87 can we work on an existing personal project and extend it with ai, or must it be new? aditya kulkarni doubts">
+  <div class="id">#87</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.90</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.4%"></span><span class="seg toxic" style="width:1.8%"></span><span class="seg spam" style="width:1.7%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Can we work on an existing personal project and extend it with AI, or must it be new?</p>
+    <p class="meta">Aditya Kulkarni · Doubts · 2026-10-20 12:20</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 87?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 87" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="88" data-label="acceptable" data-confidence="0.8417" data-low="0" data-search="#88 ankit, sorry for that comment about your app and your gate score, it was uncalled for. the app is actually good, just that one bug. saurabh yadav share your artifacts">
+  <div class="id">#88</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.84</span>
+    <span class="bar" role="img" title="acceptable 0.94, toxic 0.04, spam 0.02" aria-label="acceptable 0.94, toxic 0.04, spam 0.02"><span class="seg acceptable" style="width:94.5%"></span><span class="seg toxic" style="width:3.7%"></span><span class="seg spam" style="width:1.8%"></span></span>
+    <span class="alt">next: toxic 0.04</span>
+  </div>
+  <div class="body">
+    <p class="text">Ankit, sorry for that comment about your app and your GATE score, it was uncalled for. The app is actually good, just that one bug.</p>
+    <p class="meta">Saurabh Yadav · Share your artifacts · 2026-10-20 13:10</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 88?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 88" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="89" data-label="acceptable" data-confidence="0.8921" data-low="0" data-search="#89 our college fest registration form artifact is live, please test and break it before friday 🙏 ishita banerjee share your artifacts">
+  <div class="id">#89</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.89</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.3%"></span><span class="seg toxic" style="width:1.9%"></span><span class="seg spam" style="width:1.8%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Our college fest registration form artifact is live, please test and break it before Friday 🙏</p>
+    <p class="meta">Ishita Banerjee · Share your artifacts · 2026-10-20 16:00</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 89?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 89" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="90" data-label="acceptable" data-confidence="0.9199" data-low="0" data-search="#90 found a bug: entering an emoji in the name field crashes the confirmation page. 😅 riya thomas share your artifacts">
+  <div class="id">#90</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.92</span>
+    <span class="bar" role="img" title="acceptable 0.97, toxic 0.02, spam 0.01" aria-label="acceptable 0.97, toxic 0.02, spam 0.01"><span class="seg acceptable" style="width:97.3%"></span><span class="seg toxic" style="width:1.6%"></span><span class="seg spam" style="width:1.2%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Found a bug: entering an emoji in the name field crashes the confirmation page. 😅</p>
+    <p class="meta">Riya Thomas · Share your artifacts · 2026-10-20 16:35</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 90?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 90" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row toxic" data-id="91" data-label="toxic" data-confidence="0.4132" data-low="1" data-search="#91 who made this garbage form? typical mechanical branch people trying to code. stick to your lathe machines 😂 vikram singh share your artifacts">
+  <div class="id">#91</div>
+  <div class="verdict">
+    <span class="badge">toxic</span>
+    <span class="conf low" title="Clef's confidence, from 0 to 1">⚠ confidence 0.41</span>
+    <span class="bar" role="img" title="acceptable 0.25, toxic 0.74, spam 0.01" aria-label="acceptable 0.25, toxic 0.74, spam 0.01"><span class="seg acceptable" style="width:24.8%"></span><span class="seg toxic" style="width:74.0%"></span><span class="seg spam" style="width:1.2%"></span></span>
+    <span class="alt">next: acceptable 0.25</span>
+  </div>
+  <div class="body">
+    <p class="text">Who made this garbage form? Typical mechanical branch people trying to code. Stick to your lathe machines 😂</p>
+    <p class="meta">Vikram Singh · Share your artifacts · 2026-10-20 17:02</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 91?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="acceptable">acceptable</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 91" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="92" data-label="acceptable" data-confidence="0.8922" data-low="0" data-search="#92 does using ai-generated images in the artifact need attribution too? shruti deshpande doubts">
+  <div class="id">#92</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.89</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.3%"></span><span class="seg toxic" style="width:1.9%"></span><span class="seg spam" style="width:1.8%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Does using AI-generated images in the artifact need attribution too?</p>
+    <p class="meta">Shruti Deshpande · Doubts · 2026-10-21 10:10</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 92?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 92" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="93" data-label="acceptable" data-confidence="0.8921" data-low="0" data-search="#93 will there be a session on how to evaluate ai-generated code for security issues? seems important for the next assignment. siddharth rao general">
+  <div class="id">#93</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.89</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.3%"></span><span class="seg toxic" style="width:1.9%"></span><span class="seg spam" style="width:1.8%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Will there be a session on how to evaluate AI-generated code for security issues? Seems important for the next assignment.</p>
+    <p class="meta">Siddharth Rao · General · 2026-10-21 11:30</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 93?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 93" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row spam" data-id="94" data-label="spam" data-confidence="0.9318" data-low="0" data-search="#94 cs307 complete solved assignments + viva answers available!! 100% working code. dm on telegram @cs307_solutions_hub. pay after delivery. cs307_solutions general">
+  <div class="id">#94</div>
+  <div class="verdict">
+    <span class="badge">spam</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.93</span>
+    <span class="bar" role="img" title="acceptable 0.01, toxic 0.01, spam 0.98" aria-label="acceptable 0.01, toxic 0.01, spam 0.98"><span class="seg acceptable" style="width:1.5%"></span><span class="seg toxic" style="width:0.8%"></span><span class="seg spam" style="width:97.7%"></span></span>
+    <span class="alt">next: acceptable 0.01</span>
+  </div>
+  <div class="body">
+    <p class="text">CS307 complete solved assignments + viva answers available!! 100% working code. DM on telegram @cs307_solutions_hub. Pay after delivery.</p>
+    <p class="meta">cs307_solutions · General · 2026-10-21 12:00</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 94?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="acceptable">acceptable</option><option value="toxic">toxic</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 94" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="95" data-label="acceptable" data-confidence="0.9000" data-low="0" data-search="#95 sir, please consider allowing pair submissions next time, 4-member groups are hard to coordinate. ritika sen general">
+  <div class="id">#95</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.90</span>
+    <span class="bar" role="img" title="acceptable 0.97, toxic 0.02, spam 0.02" aria-label="acceptable 0.97, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:96.6%"></span><span class="seg toxic" style="width:1.9%"></span><span class="seg spam" style="width:1.5%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Sir, please consider allowing pair submissions next time, 4-member groups are hard to coordinate.</p>
+    <p class="meta">Ritika Sen · General · 2026-10-21 14:15</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 95?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 95" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="96" data-label="acceptable" data-confidence="0.8661" data-low="0" data-search="#96 finally submitted at 11:57 pm 😂 never doing last-minute again (i say this every semester). omkar jadhav submission &amp; grading">
+  <div class="id">#96</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.87</span>
+    <span class="bar" role="img" title="acceptable 0.95, toxic 0.03, spam 0.02" aria-label="acceptable 0.95, toxic 0.03, spam 0.02"><span class="seg acceptable" style="width:95.4%"></span><span class="seg toxic" style="width:2.7%"></span><span class="seg spam" style="width:1.9%"></span></span>
+    <span class="alt">next: toxic 0.03</span>
+  </div>
+  <div class="body">
+    <p class="text">Finally submitted at 11:57 PM 😂 Never doing last-minute again (I say this every semester).</p>
+    <p class="meta">Omkar Jadhav · Submission &amp; grading · 2026-10-21 23:58</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 96?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 96" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row toxic" data-id="97" data-label="toxic" data-confidence="0.8374" data-low="0" data-search="#97 if you can&#x27;t even set up an api key you shouldn&#x27;t be in cse. stop spamming the forum with your stupid doubts, dumbo. rahul chauhan doubts">
+  <div class="id">#97</div>
+  <div class="verdict">
+    <span class="badge">toxic</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.84</span>
+    <span class="bar" role="img" title="acceptable 0.04, toxic 0.94, spam 0.02" aria-label="acceptable 0.04, toxic 0.94, spam 0.02"><span class="seg acceptable" style="width:4.0%"></span><span class="seg toxic" style="width:94.3%"></span><span class="seg spam" style="width:1.7%"></span></span>
+    <span class="alt">next: acceptable 0.04</span>
+  </div>
+  <div class="body">
+    <p class="text">If you can&#x27;t even set up an API key you shouldn&#x27;t be in CSE. Stop spamming the forum with your stupid doubts, dumbo.</p>
+    <p class="meta">Rahul Chauhan · Doubts · 2026-10-22 10:05</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 97?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="acceptable">acceptable</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 97" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="98" data-label="acceptable" data-confidence="0.8793" data-low="0" data-search="#98 thanks to everyone who answered doubts here, this thread was more useful than the lectures honestly 😄 divya hegde general">
+  <div class="id">#98</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.88</span>
+    <span class="bar" role="img" title="acceptable 0.96, toxic 0.02, spam 0.02" aria-label="acceptable 0.96, toxic 0.02, spam 0.02"><span class="seg acceptable" style="width:95.9%"></span><span class="seg toxic" style="width:2.2%"></span><span class="seg spam" style="width:1.9%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Thanks to everyone who answered doubts here, this thread was more useful than the lectures honestly 😄</p>
+    <p class="meta">Divya Hegde · General · 2026-10-22 18:30</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 98?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 98" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row spam" data-id="99" data-label="spam" data-confidence="0.9342" data-low="0" data-search="#99 hey guys check out my startup app, we are giving ₹100 paytm cash for every signup using my referral code raju100 😊 link: refer-n-earn.app/raju100 raju startup general">
+  <div class="id">#99</div>
+  <div class="verdict">
+    <span class="badge">spam</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.93</span>
+    <span class="bar" role="img" title="acceptable 0.01, toxic 0.01, spam 0.98" aria-label="acceptable 0.01, toxic 0.01, spam 0.98"><span class="seg acceptable" style="width:1.3%"></span><span class="seg toxic" style="width:0.9%"></span><span class="seg spam" style="width:97.8%"></span></span>
+    <span class="alt">next: acceptable 0.01</span>
+  </div>
+  <div class="body">
+    <p class="text">Hey guys check out my startup app, we are giving ₹100 Paytm cash for every signup using my referral code RAJU100 😊 Link: refer-n-earn.app/RAJU100</p>
+    <p class="meta">Raju Startup · General · 2026-10-23 12:00</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 99?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="acceptable">acceptable</option><option value="toxic">toxic</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 99" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+<article class="row acceptable" data-id="100" data-label="acceptable" data-confidence="0.9129" data-low="0" data-search="#100 ma&#x27;am, any update on when the next assignment will be released? want to plan around mid-sems. shreya patil general">
+  <div class="id">#100</div>
+  <div class="verdict">
+    <span class="badge">acceptable</span>
+    <span class="conf" title="Clef's confidence, from 0 to 1">confidence 0.91</span>
+    <span class="bar" role="img" title="acceptable 0.97, toxic 0.02, spam 0.01" aria-label="acceptable 0.97, toxic 0.02, spam 0.01"><span class="seg acceptable" style="width:97.0%"></span><span class="seg toxic" style="width:1.6%"></span><span class="seg spam" style="width:1.4%"></span></span>
+    <span class="alt">next: toxic 0.02</span>
+  </div>
+  <div class="body">
+    <p class="text">Ma&#x27;am, any update on when the next assignment will be released? Want to plan around mid-sems.</p>
+    <p class="meta">Shreya Patil · General · 2026-10-25 10:40</p>
+  </div>
+  <div class="review">
+    <div class="verdicts" role="group" aria-label="Is Clef's label right for comment 100?">
+      <button type="button" data-verdict="right" aria-pressed="false">✓ Right</button><button type="button" data-verdict="wrong" aria-pressed="false">✗ Wrong</button>
+    </div>
+    <label class="check"><input type="checkbox" class="borderline"> Borderline</label>
+    <label class="fix">Should be <select><option value="toxic">toxic</option><option value="spam">spam</option></select></label>
+    <textarea class="note" rows="2" aria-label="Why, for comment 100" placeholder="Why? One or two sentences."></textarea>
+  </div>
+</article>
+  </div>
+  <p id="empty" hidden>No comments match.</p>
+</main>
+<dialog id="dialog" aria-labelledby="dialog-title">
+  <form method="dialog">
+    <h2 id="dialog-title">MISTAKES.md</h2>
+    <p class="help">Made from your marks and notes. Copy it into MISTAKES.md, or download it, and edit it as you like.</p>
+    <textarea id="markdown" readonly aria-label="MISTAKES.md contents"></textarea>
+    <div class="dialog-buttons">
+      <button type="button" class="button" id="copy">Copy</button>
+      <button type="button" class="button" id="download">Download</button>
+      <button class="button primary" value="close">Close</button>
+    </div>
+  </form>
+</dialog>
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const model = document.body.dataset.model;
+  const labelOrder = document.body.dataset.labels.split(" ");
+  const KEY = `clef-review:${model}`;
+  const list = $("rows");
+  const rows = [...list.querySelectorAll(".row")];
+  const checkable = rows.filter((row) => row.querySelector(".review"));
+  const view = { filter: "all", query: "", uncheckedOnly: false };
+
+  // Marks live in localStorage, keyed by comment id. A mark made against a label Clef has
+  // since changed (a re-run with new criteria) loses its right/wrong verdict.
+  let marks = {};
+  try { marks = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { marks = {}; }
+  const save = () => {
+    try { localStorage.setItem(KEY, JSON.stringify(marks)); } catch (e) { /* storage blocked: marks last until the tab closes */ }
+  };
+  const markOf = (row) => marks[row.dataset.id] || {};
+  const editMark = (row) =>
+    (marks[row.dataset.id] ||= { label: row.dataset.label, verdict: "", fix: "", borderline: false, note: "" });
+
+  function paint(row) {
+    const mark = markOf(row);
+    row.dataset.review = mark.verdict || "";
+    row.classList.toggle("is-borderline", !!mark.borderline);
+    for (const button of row.querySelectorAll("[data-verdict]")) {
+      button.setAttribute("aria-pressed", String(button.dataset.verdict === mark.verdict));
+    }
+    row.querySelector(".borderline").checked = !!mark.borderline;
+    if (mark.fix) row.querySelector(".fix select").value = mark.fix;
+    row.querySelector(".note").value = mark.note || "";
+  }
+
+  function showProgress() {
+    const all = checkable.map(markOf);
+    const checked = all.filter((m) => m.verdict).length;
+    const wrong = all.filter((m) => m.verdict === "wrong").length;
+    const borderline = all.filter((m) => m.borderline).length;
+    $("progress").textContent =
+      `Checked ${checked} of ${checkable.length} · ${wrong} wrong · ${borderline} borderline`;
+  }
+
+  function applyFilter() {
+    const query = view.query.trim().toLowerCase();
+    let shown = 0;
+    for (const row of rows) {
+      const d = row.dataset;
+      const match =
+        (view.filter === "all" || (view.filter === "low" ? d.low === "1" : d.label === view.filter)) &&
+        (!query || d.search.includes(query)) &&
+        (!view.uncheckedOnly || !d.review);
+      row.hidden = !match;
+      if (match) shown++;
+    }
+    $("empty").hidden = shown > 0;
+  }
+
+  function sortRows(how) {
+    const id = (row) => Number(row.dataset.id);
+    const confidence = (row) => Number(row.dataset.confidence);
+    const label = (row) => labelOrder.indexOf(row.dataset.label);
+    const keys = { id: [id], confidence: [confidence, id], label: [label, confidence, id] }[how];
+    const compare = (a, b) => {
+      for (const key of keys) { const diff = key(a) - key(b); if (diff) return diff; }
+      return 0;
+    };
+    list.append(...rows.slice().sort(compare));
+  }
+
+  function markdown() {
+    const oneLine = (s) => (s || "").replace(/\s+/g, " ").trim();
+    const why = (row) => oneLine(markOf(row).note) || "TODO: one or two sentences on why.";
+    const entry = (row, heading, lines) =>
+      [`### ${heading}`, "", `> ${oneLine(row.querySelector(".text").textContent)}`, "", ...lines, ""];
+    const wrong = checkable.filter((row) => markOf(row).verdict === "wrong");
+    const agreed = checkable.filter((row) => markOf(row).verdict === "right" && markOf(row).borderline);
+    const checked = checkable.filter((row) => markOf(row).verdict).length;
+    const out = [
+      "# Clef's mistakes", "",
+      `Model: \`${model}\` on Cloudflare Workers AI. Checked ${checked} of ${checkable.length} comments; ` +
+        `Clef got ${wrong.length} wrong.`, "",
+      "## Mistakes", "",
+    ];
+    if (!wrong.length) out.push("None marked.", "");
+    for (const row of wrong) {
+      out.push(...entry(row, `Comment ${row.dataset.id}${markOf(row).borderline ? " (borderline)" : ""}`, [
+        `- **Clef's label:** ${row.dataset.label}`,
+        `- **Right label:** ${row.querySelector(".fix select").value}`,
+        `- **Why:** ${why(row)}`,
+      ]));
+    }
+    if (agreed.length) {
+      out.push("## Borderline, but Clef's label is right", "");
+      for (const row of agreed) {
+        out.push(...entry(row, `Comment ${row.dataset.id} (borderline)`, [
+          `- **Clef's label and the right label:** ${row.dataset.label}`,
+          `- **Why:** ${why(row)}`,
+        ]));
+      }
+    }
+    return out.join("\n");
+  }
+
+  for (const row of checkable) {
+    const mark = marks[row.dataset.id];
+    if (mark && mark.label !== row.dataset.label) Object.assign(mark, { label: row.dataset.label, verdict: "", fix: "" });
+    paint(row);
+  }
+  showProgress();
+
+  list.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-verdict]");
+    if (!button) return;
+    const row = button.closest(".row");
+    const mark = editMark(row);
+    mark.verdict = mark.verdict === button.dataset.verdict ? "" : button.dataset.verdict; // second click undoes
+    save(); paint(row); showProgress();
+    if (mark.verdict === "wrong") row.querySelector(".note").focus();
+  });
+  list.addEventListener("change", (event) => {
+    const row = event.target.closest(".row");
+    if (event.target.matches(".borderline")) {
+      editMark(row).borderline = event.target.checked;
+      save(); paint(row); showProgress();
+    } else if (event.target.matches(".fix select")) {
+      editMark(row).fix = event.target.value;
+      save();
+    }
+  });
+  list.addEventListener("input", (event) => {
+    if (!event.target.matches(".note")) return;
+    editMark(event.target.closest(".row")).note = event.target.value;
+    save();
+  });
+
+  for (const chip of document.querySelectorAll(".chip")) {
+    chip.addEventListener("click", () => {
+      view.filter = chip.dataset.filter;
+      for (const other of document.querySelectorAll(".chip")) other.setAttribute("aria-pressed", String(other === chip));
+      applyFilter();
+    });
+  }
+  $("search").addEventListener("input", (event) => { view.query = event.target.value; applyFilter(); });
+  $("sort").addEventListener("change", (event) => sortRows(event.target.value));
+  $("unchecked").addEventListener("change", (event) => { view.uncheckedOnly = event.target.checked; applyFilter(); });
+
+  $("export").addEventListener("click", () => { $("markdown").value = markdown(); $("dialog").showModal(); });
+  $("copy").addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText($("markdown").value); }
+    catch (e) { $("markdown").select(); document.execCommand("copy"); }
+    $("copy").textContent = "Copied ✓";
+    setTimeout(() => { $("copy").textContent = "Copy"; }, 1500);
+  });
+  $("download").addEventListener("click", () => {
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(new Blob([$("markdown").value + "\n"], { type: "text/markdown" }));
+    link.download = "MISTAKES.md";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  });
+  $("reset").addEventListener("click", () => {
+    if (!confirm("Clear all your ✓/✗ marks and notes on this page?")) return;
+    marks = {};
+    save(); checkable.forEach(paint); showProgress(); applyFilter();
+  });
+})();
+</script>
+</body>
+</html>
